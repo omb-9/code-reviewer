@@ -1,0 +1,584 @@
+{
+  "name": "Code Review Assistant (Telegram + OpenRouter)",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "## Code Review Assistant\n**Telegram in, OpenRouter out, structured feedback back.**\n\n1. Add your Telegram bot credential to the four Telegram nodes.\n2. Create an **HTTP Header Auth** credential named `OpenRouter API Key` with header `Authorization` and value `Bearer sk-or-...`, then attach it to the OpenRouter node.\n3. Pick your models in the **Config** node.\n4. Activate, then message the bot `/help`.",
+        "height": 300,
+        "width": 460,
+        "color": 4
+      },
+      "id": "sticky1",
+      "name": "Note sticky1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -560,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Why a Code node instead of an AI Agent node\n\nThe prompt, the JSON schema, the flag parsing and the truncation guard all live in one readable place, so the review contract is version controlled rather than buried in node UI. It also keeps the workflow portable across n8n versions.",
+        "height": 280,
+        "width": 420,
+        "color": 7
+      },
+      "id": "sticky2",
+      "name": "Note sticky2",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        400,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "content": "### Reliability\n\nThe HTTP node retries three times, falls back to a second model via OpenRouter's `models` array, and routes failures to its own error branch so the user always gets a reply. The parser tolerates fenced or partial JSON and never throws.",
+        "height": 280,
+        "width": 420,
+        "color": 3
+      },
+      "id": "sticky3",
+      "name": "Note sticky3",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1240,
+        -180
+      ]
+    },
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "trigger",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -540,
+        300
+      ],
+      "webhookId": "a1b2c3d4-0000-4000-8000-000000000001",
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c1",
+              "name": "model",
+              "value": "anthropic/claude-sonnet-4.5",
+              "type": "string"
+            },
+            {
+              "id": "c2",
+              "name": "fallbackModel",
+              "value": "openai/gpt-4.1-mini",
+              "type": "string"
+            },
+            {
+              "id": "c3",
+              "name": "temperature",
+              "value": 0.2,
+              "type": "number"
+            },
+            {
+              "id": "c4",
+              "name": "maxCodeChars",
+              "value": 12000,
+              "type": "number"
+            },
+            {
+              "id": "c5",
+              "name": "appName",
+              "value": "n8n Code Review Assistant",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "config",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1a",
+                    "leftValue": "={{ $json.message.text || '' }}",
+                    "rightValue": "/help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  },
+                  {
+                    "id": "r1b",
+                    "leftValue": "={{ $json.message.text || '' }}",
+                    "rightValue": "/start",
+                    "operator": {
+                      "type": "string",
+                      "operation": "startsWith"
+                    }
+                  }
+                ],
+                "combinator": "or"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": false,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r2a",
+                    "leftValue": "={{ $json.message.text || $json.message.caption || '' }}",
+                    "rightValue": "",
+                    "operator": {
+                      "type": "string",
+                      "operation": "notEmpty",
+                      "singleValue": true
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "review"
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra",
+          "renameFallbackOutput": "unsupported"
+        }
+      },
+      "id": "router",
+      "name": "Route Input",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        -100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "<b>Code Review Assistant</b>\n\nPaste a snippet and you get back structured feedback: severity ranked findings, the concrete fix for each one, test gaps and an optional rewrite.\n\n<b>How to send code</b>\nPaste it directly, or wrap it in triple backticks with a language tag for best results.\n\n<b>Flags</b> (put them before the code)\n<code>--quick</code>  top issues only\n<code>--deep</code>  adds architecture and testing analysis\n<code>--security</code>  security focused pass\n<code>--perf</code>  performance focused pass\n<code>--lang=python</code>  force a language\n\n<b>Example</b>\n<code>/review --security</code> followed by your fenced code block.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "id": "help",
+      "name": "Send Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        80
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "sendChatAction",
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}"
+      },
+      "id": "typing",
+      "name": "Show Typing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "I can only review text right now. Paste your snippet as a message, or send <code>/help</code> to see the options.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "id": "unsupported",
+      "name": "Send Unsupported",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        540
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ---------------------------------------------------------------------------\n// Normalizes whatever the user pasted into a clean OpenRouter request payload.\n// Handles: /review command, inline flags, fenced code blocks, language\n// sniffing, truncation guards, and empty-input detection.\n// ---------------------------------------------------------------------------\n\nconst cfg = $('Config').first().json;\nconst trigger = $('Telegram Trigger').first().json;\nconst msg = trigger.message || {};\nconst rawText = (msg.text || msg.caption || '').toString();\n\n// Strip a leading /review command, with or without a @botname suffix.\nlet body = rawText.replace(/^\\/review(@[A-Za-z0-9_]+)?\\s*/i, '').trim();\n\n// Inline flags let the reviewer change behaviour without editing the workflow.\nconst flags = { depth: 'standard', focus: 'general', language: '' };\nbody = body.replace(/--deep\\b/gi, () => { flags.depth = 'deep'; return ''; });\nbody = body.replace(/--quick\\b/gi, () => { flags.depth = 'quick'; return ''; });\nbody = body.replace(/--security\\b/gi, () => { flags.focus = 'security'; return ''; });\nbody = body.replace(/--perf\\b/gi, () => { flags.focus = 'performance'; return ''; });\nbody = body.replace(/--lang=([A-Za-z0-9+#._-]+)/gi, (m, g) => { flags.language = g.toLowerCase(); return ''; });\nbody = body.trim();\n\n// Prefer the contents of a fenced block when one is present.\nlet language = flags.language;\nlet code = body;\nconst fence = body.match(/```([A-Za-z0-9+#._-]*)[^\\S\\n]*\\n([\\s\\S]*?)```/);\nif (fence) {\n  if (!language && fence[1]) language = fence[1].toLowerCase();\n  code = fence[2];\n}\ncode = code.replace(/\\s+$/, '');\n\n// Cheap heuristics so the prompt can state a language even when none is given.\nif (!language) {\n  const sniff = [\n    [/^\\s*package\\s+[\\w.]+;|public\\s+(static\\s+)?(class|void)\\s+\\w+/m, 'java'],\n    [/^\\s*def\\s+\\w+\\s*\\(|^\\s*from\\s+[\\w.]+\\s+import\\b|^\\s*elif\\b/m, 'python'],\n    [/^\\s*func\\s+\\w+\\s*\\(|^\\s*package\\s+main\\b/m, 'go'],\n    [/^\\s*fn\\s+\\w+\\s*\\(|\\blet\\s+mut\\b|->\\s*Result</m, 'rust'],\n    [/<\\?php/, 'php'],\n    [/^\\s*(interface|type)\\s+\\w+\\s*(=|\\{)|:\\s*(string|number|boolean)\\b/m, 'typescript'],\n    [/^\\s*(SELECT|INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|CREATE\\s+TABLE)\\b/im, 'sql'],\n    [/^#!.*\\b(ba)?sh\\b|^\\s*(fi|esac|done)\\s*$/m, 'bash'],\n    [/\\b(const|let|var)\\b|=>|function\\s*\\(/, 'javascript'],\n  ];\n  for (const pair of sniff) {\n    if (pair[0].test(code)) { language = pair[1]; break; }\n  }\n}\nif (!language) language = 'unknown';\n\nconst lineCount = code ? code.split('\\n').length : 0;\nconst maxChars = Number(cfg.maxCodeChars) || 12000;\nlet truncated = false;\nif (code.length > maxChars) {\n  code = code.slice(0, maxChars);\n  truncated = true;\n}\n\n// Anything shorter than this is almost certainly chat, not code.\nconst ok = code.trim().length >= 20;\n\nconst depthRules = {\n  quick: 'Return at most 4 findings and only those rated medium severity or higher. Keep explanations to one sentence.',\n  standard: 'Return at most 8 findings, ordered by severity.',\n  deep: 'Return up to 15 findings. Include architectural observations and testing gaps alongside line level issues.',\n};\n\nconst focusRules = {\n  general: 'Weigh correctness, security, performance, readability and testing evenly.',\n  security: 'Prioritize security above all else. Lead with injection, authentication, secrets handling, deserialization, path traversal and access control issues.',\n  performance: 'Prioritize performance above all else. Lead with algorithmic complexity, redundant allocations, N+1 queries, blocking calls in async paths and missing caching.',\n};\n\nconst systemPrompt = [\n  'You are a senior staff engineer performing a rigorous code review.',\n  '',\n  'Review the snippet supplied by the user and reply with a single JSON object matching the required schema. Emit no prose outside the JSON.',\n  '',\n  'Rules:',\n  '1. Judge only what the code actually does. When context is missing, say so inside the finding instead of inventing behaviour.',\n  '2. Every finding must be actionable: name the concrete risk and the concrete fix.',\n  '3. Reserve critical and high severity for security holes, data loss, crashes and incorrect results. A style preference is never high severity.',\n  '4. line_hint must quote a short distinctive fragment of the offending line rather than a line number, because the snippet may be an excerpt.',\n  '5. suggestion should contain a minimal corrected code fragment when a code change is warranted, otherwise a single sentence instruction.',\n  '6. positives must be specific. Skip generic praise. An empty list beats filler.',\n  '7. refactored_snippet should hold the full corrected snippet only when the rewrite is small enough to be useful in one block, otherwise an empty string.',\n  '8. If the input is not code at all, set overall_risk to unknown, explain that in summary and return no findings.',\n  '',\n  depthRules[flags.depth] || depthRules.standard,\n  focusRules[flags.focus] || focusRules.general,\n].join('\\n');\n\nconst userPrompt = [\n  'Declared language: ' + language,\n  'Line count: ' + lineCount,\n  truncated ? 'Note: the snippet was truncated at ' + maxChars + ' characters, so the tail is missing.' : '',\n  '',\n  'Code to review:',\n  '```' + (language === 'unknown' ? '' : language),\n  code,\n  '```',\n].filter(Boolean).join('\\n');\n\nconst schema = {\n  type: 'object',\n  additionalProperties: false,\n  required: ['language', 'summary', 'overall_risk', 'findings', 'positives', 'suggested_tests', 'refactored_snippet'],\n  properties: {\n    language: { type: 'string', description: 'Language actually detected in the snippet.' },\n    summary: { type: 'string', description: 'Two or three sentences on what the code does and its overall health.' },\n    overall_risk: { type: 'string', enum: ['low', 'medium', 'high', 'critical', 'unknown'] },\n    findings: {\n      type: 'array',\n      items: {\n        type: 'object',\n        additionalProperties: false,\n        required: ['severity', 'category', 'title', 'line_hint', 'explanation', 'suggestion'],\n        properties: {\n          severity: { type: 'string', enum: ['critical', 'high', 'medium', 'low', 'nit'] },\n          category: { type: 'string', enum: ['security', 'correctness', 'performance', 'readability', 'testing', 'architecture', 'style'] },\n          title: { type: 'string', description: 'Under ten words.' },\n          line_hint: { type: 'string', description: 'Short quoted fragment of the offending line, or an empty string.' },\n          explanation: { type: 'string' },\n          suggestion: { type: 'string' },\n        },\n      },\n    },\n    positives: { type: 'array', items: { type: 'string' } },\n    suggested_tests: { type: 'array', items: { type: 'string' } },\n    refactored_snippet: { type: 'string' },\n  },\n};\n\nconst payload = {\n  model: cfg.model,\n  models: [cfg.model, cfg.fallbackModel],\n  temperature: Number(cfg.temperature),\n  max_tokens: 4000,\n  response_format: {\n    type: 'json_schema',\n    json_schema: { name: 'code_review', strict: true, schema: schema },\n  },\n  messages: [\n    { role: 'system', content: systemPrompt },\n    { role: 'user', content: userPrompt },\n  ],\n};\n\nreturn [{\n  json: {\n    ok: ok,\n    chatId: msg.chat ? msg.chat.id : null,\n    messageId: msg.message_id || null,\n    userName: (msg.from && (msg.from.username || msg.from.first_name)) || 'there',\n    language: language,\n    lineCount: lineCount,\n    truncated: truncated,\n    flags: flags,\n    payload: payload,\n  },\n}];\n"
+      },
+      "id": "prepare",
+      "name": "Prepare Review Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "if1",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "hascode",
+      "name": "Has Reviewable Code?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        620,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "I need a bit more to work with. Send at least a few lines of code, ideally inside a fenced block:\n\n<pre><code>```python\ndef risky(user_input):\n    return eval(user_input)\n```</code></pre>\nSend <code>/help</code> for the flag list.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "id": "empty",
+      "name": "Send Empty Prompt",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        860,
+        500
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://openrouter.ai/api/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "HTTP-Referer",
+              "value": "https://n8n.io"
+            },
+            {
+              "name": "X-Title",
+              "value": "={{ $('Config').first().json.appName }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.payload) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "id": "openrouter",
+      "name": "OpenRouter Code Review",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        860,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "REPLACE_WITH_OPENROUTER_CREDENTIAL_ID",
+          "name": "OpenRouter API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "\n// ---------------------------------------------------------------------------\n// Turns the OpenRouter response into Telegram ready HTML, defensively.\n// Never throws on a malformed model reply, and splits long reviews into\n// ordered chunks that stay under Telegram's 4096 character message limit.\n// ---------------------------------------------------------------------------\n\nconst prep = $('Prepare Review Request').first().json;\nconst res = $json || {};\n\nconst LIMIT = 3600;\nconst RISK_ICON = { critical: '\\u{1F6D1}', high: '\\u{1F534}', medium: '\\u{1F7E0}', low: '\\u{1F7E1}', nit: '\\u26AA', unknown: '\\u2753' };\nconst ORDER = { critical: 0, high: 1, medium: 2, low: 3, nit: 4 };\n\nfunction esc(v) {\n  return String(v === undefined || v === null ? '' : v)\n    .replace(/&/g, '&amp;')\n    .replace(/</g, '&lt;')\n    .replace(/>/g, '&gt;');\n}\n\nfunction messageText(r) {\n  const choice = r && r.choices && r.choices[0];\n  const content = choice && choice.message ? choice.message.content : '';\n  if (typeof content === 'string') return content;\n  if (Array.isArray(content)) return content.map((p) => p.text || '').join('');\n  return '';\n}\n\nlet raw = messageText(res).trim();\nraw = raw.replace(/^```(?:json)?\\s*/i, '').replace(/```\\s*$/, '').trim();\n\nlet review = null;\ntry {\n  review = JSON.parse(raw);\n} catch (err) {\n  const start = raw.indexOf('{');\n  const end = raw.lastIndexOf('}');\n  if (start !== -1 && end > start) {\n    try { review = JSON.parse(raw.slice(start, end + 1)); } catch (inner) { review = null; }\n  }\n}\n\nif (!review || typeof review !== 'object') {\n  review = {\n    language: prep.language,\n    summary: raw ? raw.slice(0, 900) : 'The model returned no usable output. Try again, or switch models in the Config node.',\n    overall_risk: 'unknown',\n    findings: [],\n    positives: [],\n    suggested_tests: [],\n    refactored_snippet: '',\n  };\n}\n\nconst findings = Array.isArray(review.findings) ? review.findings.slice() : [];\nfindings.sort((a, b) => (ORDER[a.severity] ?? 9) - (ORDER[b.severity] ?? 9));\n\nconst counts = {};\nfor (const f of findings) counts[f.severity] = (counts[f.severity] || 0) + 1;\nconst countLine = ['critical', 'high', 'medium', 'low', 'nit']\n  .filter((s) => counts[s])\n  .map((s) => RISK_ICON[s] + ' ' + counts[s] + ' ' + s)\n  .join('   ');\n\nconst risk = String(review.overall_risk || 'unknown').toLowerCase();\nconst lang = review.language || prep.language;\n\n// Each entry is one atomic block. Blocks are never split mid tag.\nconst blocks = [];\n\nblocks.push(\n  '<b>Code Review</b>  ' + (RISK_ICON[risk] || RISK_ICON.unknown) + ' <b>' + esc(risk.toUpperCase()) + ' RISK</b>\\n' +\n  '<i>' + esc(lang) + ' \\u00B7 ' + prep.lineCount + ' lines' + (prep.truncated ? ' \\u00B7 truncated' : '') + '</i>'\n);\n\nif (countLine) blocks.push(countLine);\nif (review.summary) blocks.push(esc(review.summary));\n\nif (findings.length) {\n  blocks.push('<b>Findings</b>');\n  findings.forEach((f, i) => {\n    const parts = [\n      (RISK_ICON[f.severity] || RISK_ICON.unknown) + ' <b>' + (i + 1) + '. ' + esc(f.title) + '</b>' +\n      ' <i>(' + esc(f.category) + ')</i>',\n    ];\n    if (f.line_hint) parts.push('<code>' + esc(f.line_hint) + '</code>');\n    if (f.explanation) parts.push(esc(f.explanation));\n    if (f.suggestion) {\n      const multiline = /\\n/.test(f.suggestion) || f.suggestion.length > 90;\n      parts.push(multiline\n        ? '<pre><code>' + esc(f.suggestion) + '</code></pre>'\n        : '\\u{1F4A1} ' + esc(f.suggestion));\n    }\n    blocks.push(parts.join('\\n'));\n  });\n}\n\nif (Array.isArray(review.positives) && review.positives.length) {\n  blocks.push('<b>What works well</b>\\n' + review.positives.map((p) => '\\u2705 ' + esc(p)).join('\\n'));\n}\n\nif (Array.isArray(review.suggested_tests) && review.suggested_tests.length) {\n  blocks.push('<b>Tests worth adding</b>\\n' + review.suggested_tests.map((t) => '\\u{1F9EA} ' + esc(t)).join('\\n'));\n}\n\nif (review.refactored_snippet && review.refactored_snippet.trim()) {\n  blocks.push('<b>Suggested rewrite</b>\\n<pre><code class=\"language-' + esc(lang) + '\">' +\n    esc(review.refactored_snippet.trim()) + '</code></pre>');\n}\n\nconst usage = res.usage || {};\nblocks.push('<i>' + esc(res.model || prep.payload.model) + ' \\u00B7 ' +\n  (usage.total_tokens || 0) + ' tokens</i>');\n\n// Pack blocks into chunks. A single oversized block is hard split as a last resort.\nconst chunks = [];\nlet current = '';\nfor (const block of blocks) {\n  const piece = block.length > LIMIT ? block.slice(0, LIMIT - 20) + '\\n<i>[trimmed]</i>' : block;\n  if (!current) {\n    current = piece;\n  } else if (current.length + piece.length + 2 <= LIMIT) {\n    current += '\\n\\n' + piece;\n  } else {\n    chunks.push(current);\n    current = piece;\n  }\n}\nif (current) chunks.push(current);\n\nreturn chunks.map((chunk, i) => ({\n  json: {\n    chatId: prep.chatId,\n    replyTo: i === 0 ? prep.messageId : null,\n    part: i + 1,\n    parts: chunks.length,\n    chunk: chunks.length > 1 ? chunk + '\\n<i>(' + (i + 1) + '/' + chunks.length + ')</i>' : chunk,\n  },\n}));\n"
+      },
+      "id": "parse",
+      "name": "Format Review",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chatId }}",
+        "text": "={{ $json.chunk }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "send",
+      "name": "Send Review",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1340,
+        220
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      },
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').first().json.message.chat.id }}",
+        "text": "=⚠️ The review could not be completed.\n\n<b>Reason:</b> <code>{{ $json.error ? ($json.error.message || $json.error) : 'Unknown error from OpenRouter' }}</code>\n\nThis is usually a rate limit, an unavailable model or an oversized snippet. Try again shortly, or trim the snippet and resend.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "appendAttribution": false
+        }
+      },
+      "id": "failure",
+      "name": "Send Failure Notice",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1100,
+        440
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "REPLACE_WITH_TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Route Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Input": {
+      "main": [
+        [
+          {
+            "node": "Send Help",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Show Typing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Unsupported",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Typing": {
+      "main": [
+        [
+          {
+            "node": "Prepare Review Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Review Request": {
+      "main": [
+        [
+          {
+            "node": "Has Reviewable Code?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Reviewable Code?": {
+      "main": [
+        [
+          {
+            "node": "OpenRouter Code Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Empty Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenRouter Code Review": {
+      "main": [
+        [
+          {
+            "node": "Format Review",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Failure Notice",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Review": {
+      "main": [
+        [
+          {
+            "node": "Send Review",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "active": false,
+  "versionId": "",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
