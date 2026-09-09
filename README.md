@@ -1,94 +1,47 @@
-Code Reviewer
+# Code Reviewer
 
+---
 
-
-Code Review Assistant (Telegram + OpenRouter)
-
+## Code Review Assistant (Telegram + OpenRouter)
 
 An n8n workflow that turns Telegram into the front end for a structured, schema-enforced code review tool. Paste a snippet, get back severity-ranked findings, concrete fixes, test suggestions, and an optional rewrite, all generated through OpenRouter with automatic model fallback.
 
-
-Why this exists
-
+### Why this exists
 
 Most "AI code review bot" demos pipe a prompt into a model and post whatever comes back. This one forces the model to answer inside a strict JSON schema, so every finding has a severity, a category, a quoted line fragment, an explanation, and a fix. That structure is what makes the output usable instead of just plausible-sounding prose. The prompt logic, flag parsing, and JSON schema all live in a single readable Code node rather than being buried inside an AI Agent node's configuration, so the review contract is easy to read, version, and change.
 
+### Features
 
-Features
+- Accepts plain pasted code or fenced code blocks with a language tag
+- Detects the language automatically across nine common grammars when none is declared
+- Inline flags to control depth and focus without touching the workflow
+- Structured JSON output enforced through OpenRouter's `response_format` schema
+- Automatic retry and model fallback if the primary model fails or times out
+- Defensive parsing that degrades gracefully instead of throwing on malformed model output
+- Long reviews are split into ordered, Telegram-safe message chunks
 
-
-
-
-Accepts plain pasted code or fenced code blocks with a language tag
-
-
-Detects the language automatically across nine common grammars when none is declared
-
-
-Inline flags to control depth and focus without touching the workflow
-
-
-Structured JSON output enforced through OpenRouter's response_format schema
-
-
-Automatic retry and model fallback if the primary model fails or times out
-
-
-Defensive parsing that degrades gracefully instead of throwing on malformed model output
-
-
-Long reviews are split into ordered, Telegram-safe message chunks
-
-
-
-
-Flags
-
+### Flags
 
 Send these before your code, in any combination.
 
-
-
-
-Flag
-Effect
-
-
-
-
---quick
-Top issues only, one-sentence explanations
-
-
---deep
-Adds architectural notes and testing gaps, up to 15 findings
-
-
---security
-Reorders priority toward injection, auth, secrets, and access control
-
-
---perf
-Reorders priority toward complexity, blocking calls, and caching
-
-
---lang=python
-Forces a language instead of auto-detecting one
-
-
-
+| Flag | Effect |
+|---|---|
+| `--quick` | Top issues only, one-sentence explanations |
+| `--deep` | Adds architectural notes and testing gaps, up to 15 findings |
+| `--security` | Reorders priority toward injection, auth, secrets, and access control |
+| `--perf` | Reorders priority toward complexity, blocking calls, and caching |
+| `--lang=python` | Forces a language instead of auto-detecting one |
 
 Example:
 
-
+```
 /review --security
 ```python
 import os
 def run(cmd):
     return os.system('sh -c ' + cmd)
-
-
-
+```
+```
 
 ### Setup
 
@@ -122,3 +75,7 @@ Format Review parses the model's JSON response, tolerating fenced code blocks or
 - Very large files will hit the character truncation limit set in the Config node; raise `maxCodeChars` if needed, keeping model context limits in mind.
 - Language detection is heuristic-based and can misfire on unusual or minified code.
 - This reviews single snippets in isolation, so it has no awareness of the rest of a codebase.
+
+### License
+
+Add your preferred license here.
